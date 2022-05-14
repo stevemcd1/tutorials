@@ -1,0 +1,184 @@
+---
+title: "K-means clustering"
+author: "Dr. Steve McDonald"
+date: "1/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## K-means clustering
+
+The following provides some practical insights as to how one might conduct and interpret k-means cluster analysis in R. Like hierarchical clustering, this procedure allows for the categorization of units based on similar responses or features. But instead of combining groups based on distance, the k-means clustering algorithm identifies a central vector associated with each cluster and defines membership based on closeness to that vector. 
+
+As with the previous tutorial, I will demonstrate k-means clustering using data from the O*NET survey, which collects information about the skills associated with a long list of occupations in the United States. 
+
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(dendextend)
+library(factoextra)
+library(gridExtra)
+
+```
+
+Next you'll need to download the data from O*NET. I've already saved my version separately. Here's the url in case you want to try: [www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx](https://www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx)
+
+
+```{r load}
+onet <- read_excel("Q:/My Drive/research/data/onet/Skills.xlsx")
+
+```
+
+## Data manipulation
+
+Now that we have our data loaded into R, we'll need to prepare it for our analyses. We'll do three tasks at once...
+
+A. The data contain two different evaluations of skill. Level refers to the amount of skill needed within an occupation. Importance refers to the degree of importance of that skill to the occupation. For this example, we're going to keep only the level scores. See the filter command. 
+
+B. We will only keep the variables that we need, which in this case is just four variables. See the select command.
+
+C. The dataset contains multiple rows for each occupation, each of which provides a value for a different skill. We will need to construct a "tidy" dataset, whereby each row represents a unique occupation, with skill values spread out across multiple variables. This is accomplished via the pivot_wider command.
+
+```{r manip}
+skills <- onet %>% 
+  filter(`Scale Name`=="Level") %>% 
+  subset(select = c("O*NET-SOC Code","Title","Element Name","Data Value")) %>%
+  pivot_wider(names_from = `Element Name`, values_from = `Data Value`)
+
+```
+
+Finally, let's construct a new dataframe that contains only the skill variables. This will make it easier to run some of the analyses. To do this, we'll select only columns 3-37 (ignoring columns 1 and 2)
+
+```{r skill2}
+skill2 <- skills[,3:37]
+```
+
+## K-Means Clustering
+
+K-means clustering does not use a distance matrix, but it does require a standardized set of variables. For this we can use the scale command. 
+
+```{r scale}
+skill3 <- as.data.frame(scale(skill2))
+
+```
+
+The scale command is applied to the skill2 matrix and converted to a dataframe that I named skill3. Now let's look at the differences between the original and the scaled version. Below is a summary of three different variables from the two datasets. 
+```{r compare}
+summary(skill2[, c("Writing", "Persuasion", "Troubleshooting")])
+summary(skill3[, c("Writing", "Persuasion", "Troubleshooting")])
+
+```
+
+The original dataset contains a set of positive values that range between 0 and 6. Standardization of these variables sets the mean values to 0 and each single unit away from zero (positive or negative) reflecting values that are one standard deviation away from the mean. 
+
+### Estimating k-means clusters
+
+K refers to the number of clusters. The value of k is set by the researcher -- though we'll discuss strategies for identifying optimal k later. The k-means clustering algorithm begins by choosing a random set of observations (in this case, occupations) equal to k. Let's say k=3 and our first three observations are {A,B,C}. The algorithm then estimates a centroid for each of these observations based on their patterns of responses across the variables. 
+
+Additional observations are then iteratively added. Let's say that D is added and its response pattern is very similar to B. The algorithm would group B and D in single group. The addition of D might also shift the centroid somewhat, as adding new observations to the group can effect the center. Or perhaps A and B were quite similar in their responses and D was distinct from both. In that case, A and B might be reassigned to the same group and D would become its own group. 
+
+As more and more observations are added, the algorithm attempts to identify a grouping of k such that the average distance between observations and k centroids is optimally reduced. Below I run this procedure on the O*NET data using k=2. 
+
+```{r k2}
+set.seed(123)
+k2 <- kmeans(skill3, 2, nstart = 25)
+
+```
+
+Because this procedure begins with a random set of observations, the results could be different depending on the starting point. Therefore, I set a random number seed to ensure reproducibility. 
+Into the kmeans command we feed the skill3 data matrix (occupations by skills). Next k is set to 2. The nstart = 25 option tells R to attempt 25 different starting points and keep only the best performing one. 
+
+Now let's take a look at the k2 object.
+
+```{r strk2}
+str(k2)
+
+```
+
+Clusters gives us the cluster label for each occupation -- either 1 or 2 because we only have two groups. Centers gives us a matrix of centroids for the two groups across the 35 skill variables. Withinss refers to the within-cluster sum of squared distances between each observation and its assigned centroid. Summing those two values gives us the tot.withinss, which is the value that the algorithm attempts to minimize to ensure optimization. 
+
+Sometimes it is helpful to visualize the k-means results. 
+
+```{r viz2}
+fviz_cluster(k2, data = skill3)
+
+```
+
+Here we can see a plotting of the observations in two dimensional space with what the k-means clustering algorithm considers to be the optimal 2-group split. 
+
+Now let's compare these findings to results when we have a larger number of groups. 
+
+```{r kcompare}
+k3 <- kmeans(skill3, 3, nstart = 25)
+k4 <- kmeans(skill3, 4, nstart = 25)
+k5 <- kmeans(skill3, 5, nstart = 25)
+
+# plots to compare
+p2 <- fviz_cluster(k2, geom = "point", data = skill3) + ggtitle("k = 2")
+p3 <- fviz_cluster(k3, geom = "point",  data = skill3) + ggtitle("k = 3")
+p4 <- fviz_cluster(k4, geom = "point",  data = skill3) + ggtitle("k = 4")
+p5 <- fviz_cluster(k5, geom = "point",  data = skill3) + ggtitle("k = 5")
+
+grid.arrange(p2, p3, p4, p5, nrow = 2)
+
+
+```
+
+By adding to the value of k, we get different groupings of occupations. This raises several questions: what value of k is the best to use? How many groups best describe the variation in the data? 
+
+One of the simplest and most common ways to determine optimal k is to assess changes in the total within sum of squared distances for each model. In most instances, adding to k should reduce those distances, but at some point adding more groups won't provide much more benefit in terms of explanatory power. 
+
+```{r wss}
+fviz_nbclust(skill3, kmeans, method = "wss")
+
+```
+
+The steeper the slope of the decline between points indicates greater overall improvement of the clustering routine. For example, moving from one group to two results in a massive decline in the average variance from group centroids. By contrast, a shift from 7 groups to 8 results in almost no reduction in total WSS. 
+
+This graphic is referred to as an "elbow" plot. The goal when attempting to identify optimal k is to look for those elbow points in the graph where a steep decline is followed by a relatively flat trajectory. In this case, it is difficult to see a clear elbow point. But 2, 5, 7, or 9 all seem like decent options. Let's look at these more closely.
+
+```{r k2579}
+k7 <- kmeans(skill3, 7, nstart = 25)
+k9 <- kmeans(skill3, 9, nstart = 25)
+
+p7 <- fviz_cluster(k7, geom = "point",  data = skill3) + ggtitle("k = 7")
+p9 <- fviz_cluster(k9, geom = "point",  data = skill3) + ggtitle("k = 9")
+
+grid.arrange(p2, p5, p7, p9, nrow = 2)
+
+```
+
+When examining these plots, I like to look for groupings that are relatively well-defined with minimal overlap in the borders. The seven and nine cluster solutions do a good job of capturing some of the smaller subgroups to the right of the graph, but it comes at the expense of substantial overlap on the left side. In particular, the green subgroup to the right in both k=7 and k=9 appears to overlap substantially with other groups. With this in mind, k=5 seems like the most attractive option to me. 
+
+One should be careful not to over-interpret these graphs, though. Centroids are not simply points in two dimensional space, but vectors in multidimensional space. That can be difficult to convey in a 2-D plot, which is why the overlap exists in the first place. 
+
+### Outliers
+
+You might notice in the graph particular points that are quite distant from others. These outliers are resistant to categorization, affect centroid estimation, and increase error variance. You might therefore decide to exclude these observations to improve the overall fit of the clustering. 
+
+To me the most obvious outlier is the point that is furthest to the left on the graph. On closer inspection, you'll find that point to be Chief Executive Officers, the very first observation in the dataset. Apparently, CEOs report a bizarre set of skills relative to workers in other occupations. One might therefore decide to exclude CEOs from the analysis. 
+
+```{r ceos}
+skill3b <- skill3[2:873,]
+
+k5b <- kmeans(skill3b, 5, nstart = 25)
+fviz_cluster(k5b, geom = "point",  data = skill3b) + ggtitle("k = 5, outlier removed")
+```
+
+The initial command removes the first row of the dataframe and saves it as a new skill3b object. Then I estimate and plot a new kmeans cluster analysis with k=5. Comparing the total WSS for the two samples (see below) does in fact suggest that removing that outlier substantially improves the clustering estimation. 
+
+```{r ceos2}
+k5$tot.withinss
+k5b$tot.withinss
+
+```
+
+For more on kmeans clustering, I recommend checking out following websites, which is where I drew some of code for my tutorial. They provide more detail on these procedures, as well as further thoughts on optimizing k: 
+[https://uc-r.github.io/kmeans_clustering](https://uc-r.github.io/kmeans_clustering)
+[https://www.datacamp.com/community/tutorials/k-means-clustering-r](https://www.datacamp.com/community/tutorials/k-means-clustering-r)
+

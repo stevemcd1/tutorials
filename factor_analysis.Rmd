@@ -1,0 +1,246 @@
+---
+title: "Factor analysis example"
+author: "Dr. Steve McDonald"
+date: "11/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Factor Analysis
+
+The following provides some practical insights as to how one might conduct and interpret factor analysis in R. Factor analysis is a measurement strategy that estimates latent characteristics of a sample based on shared response patterns or features within a dataframe. 
+
+I will demonstrate this procedure using data from the O*NET survey, which collects information about the skills associated with a long list of occupations in the United States. 
+
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(ltm)
+library(rgl)
+library(corrplot)
+
+```
+
+Next you'll need to download the data from O*NET. I've already saved my version separately. Here's the url in case you want to try: [www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx](https://www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx)
+
+
+```{r load}
+onet <- read_excel("Q:/My Drive/research/data/onet/Skills.xlsx")
+
+```
+
+## Data manipulation
+
+Now that we have our data loaded into R, we'll need to prepare it for our analyses. We'll do three tasks at once...
+
+A. The data contain two different evaluations of skill. Level refers to the amount of skill needed within an occupation. Importance refers to the degree of importance of that skill to the occupation. For this example, we're going to keep only the level scores. See the filter command. 
+
+B. We will only keep the variables that we need, which in this case is just four variables. See the select command.
+
+C. The dataset contains multiple rows for each occupation, each of which provides a value for a different skill. We will need to construct a "tidy" dataset, whereby each row represents a unique occupation, with skill values spread out across multiple variables. This is accomplished via the pivot_wider command.
+
+```{r manip}
+skills <- onet %>% 
+  filter(`Scale Name`=="Level") %>% 
+  subset(select = c("O*NET-SOC Code","Title","Element Name","Data Value")) %>%
+  pivot_wider(names_from = `Element Name`, values_from = `Data Value`)
+
+```
+
+Note that this code uses piping (see the "%>%") to apply each of these three commands to the onet object, and then sending those changes to a new object called skills. This is a super efficient way to organize your code! 
+
+Now the variable labels tend to be a bit long and often have spaces in them, which makes them difficult to manipulate. So let's do a quick fix to those labels. 
+
+```{r labels}
+colnames(skills) <- c("soccode","title","ReadComp","ActiveListen",
+                    "Writing","Speaking","Mathematics","Science",
+                    "CritThink","ActiveLearn","LearnStrategies",
+                    "Monitoring","SocPercept","Coordination",
+                    "Persuasion","Negotiation","Instructing",
+                    "ServOrient","ComplexProbSolv","OpsAnalysis",
+                    "TechDesign","EquipSelect","Installation",
+                    "Programming","Operations Monitoring",
+                    "OpsAndControl","EquipMaintenance",
+                    "Troubleshooting","Repairing",
+                    "QualControlAnalysis","DecisionMaking",
+                    "SysAnalysis","SysEval","TimeMgmt",
+                    "MgmtFinancialRes","MgmtMaterialRes",
+                    "MgmtPersonnelRes")
+```
+
+Finally, let's construct a new dataframe that contains only the skill variables. This will make it easier to run some of the analyses. To do this, we'll select only columns 3-37 (ignoring columns 1 and 2)
+
+```{r skill2}
+skill2 <- skills[,3:37]
+```
+
+## Cronbach's Alpha
+
+Before we run factor analysis, let's see how highly associated the skill variables are. Cronbach's alpha is a useful statistic to consider when scaling multiple variables. Also referred to as the reliability coefficient, it tells us how highly the variables correlate with one another. 
+
+```{r alpha}
+alpha <- cronbach.alpha(skill2)
+alpha
+```
+
+Cronbach's alpha ranges from zero to one. Usually we want to ensure that indices have an alpha score that is >= .6. Here we get an alpha coefficient of `r round(alpha$alpha,3)`, which is a very high score. 
+
+This suggests that it makes sense to combine these scores into a single index. However, let's try to explore in greater detail the variation across these different variables. 
+
+## Correlations
+
+Using the corrplot package, we can visualize the pairwise correlations. 
+
+```{r corr}
+cor.mat <- round(cor(skill2),2)
+corrplot(cor.mat, type="upper", order="hclust", 
+         tl.col="black", tl.srt=45)
+```
+
+cor.mat is the correlation matrix. I have ordered the rows and columns based on hierarchical clustering, which helps to group together occupations with similar scores. 
+
+In the graphic, you'll note that the occupations in the uppermost rows (which are related to equipment maintenance) tend to be either unrelated or inversely related to most of the other skills. 
+
+Based on this evidence, one could decide to index these two sets of skills separately. But let's take a deeper dive to examine latent dimensions of variation that are more difficult to detect. 
+
+## Factor analysis in 2D
+
+Let's run a basic factor analysis to examine the key features. Here we'll use the factanal command and specify two latent factors. The varimax procedure rotates the factor scores in order to help differentiate the dimensions. (Technically speaking, it makes them more "orthogonal," which is the opposite of parallel.)
+
+```{r factanal}
+fit <- factanal(skill2, 2, rotation="varimax")
+```
+
+Now let's look at the features, starting with factor loadings. 
+
+```{r loadings}
+fit$loadings
+```
+
+First we get a list of how each skill "loads" onto each of the two dimensions. These loadings range from -1 to 1, with higher values indicating stronger affiliation with the factors. A close inspection of the factor loadings can help us to define, conceptually, the two different dimensions. 
+
+For example, we can see a lot of high loadings for the first factor, with only a few variables loading highly on the second factor You may note that the variables which load onto to second factor are the variables related to the equipment maintenance. Factor analysis has therefore effectively identified this crucial distinction between maintenance related skills and all other skills. 
+
+We can visualize this distinction by plotting the variables. That is to say, the factor loadings can serve as [x,y] coordinates that can be mapped onto two-dimensional space. 
+
+```{r plot2D}
+load <- fit$loadings[,1:2] 
+plot(load,type="n") # set up plot 
+text(load,labels=names(skill2),cex=.7) # add variable names
+
+```
+
+The code takes the factor loadings for the two dimensions (columns 1 and 2) and saves them as an object named load. The next two lines plot the variables and applies the variables labels. 
+
+The result is a clear demarcation between equipment maintenance skills (upper left corner) and all other skills (lower right corner). 
+
+## Determining how many factors to extract 
+
+You may have noted above that the fit$loadings object contains some useful summary information at the end. In particular, we can observe the proportion of the total variance in responses across these variables that is explained by each of these two factors. 
+
+The first factor explains nearly half of the total variance (0.486). The second factor explains 22 percent of the total variance. The proportion of variance determines how these factors are sequentially assigned -- the first factor explains the most variance and each subsequent factor explains less than the previous one. 
+
+Overall, these two factors explain just over 70 percent of the total variance in skill scores. Is this enough? Should we add more dimensions to help us further differentiate occupational skills? If so, how many more dimensions should we add? 
+
+To do this, let's use the princomp command, which can be used to examine a much larger number of dimensions. The following code generates a scree plot that displays the declining variance explained for each subsequent latent dimension identified. 
+
+```{r scree}
+fit <- princomp(skill2, cor=TRUE)
+plot(fit,type="lines") 
+```
+
+Here we can see that the variance explained (y-axis) declines with each additional latent factor, which will always be the case for factor analysis. 
+
+But in this instance, we can see that, in terms of variance explained, we receive very little benefit from adding more factors after adding the third factor. This suggests that a three factor solution represents our optimal scaling of occupational skills. 
+
+## Three factor solution
+
+Let's closely examine the factor loadings for the three factor solution. To make this easier, the code below generates the top six skills for each factor. 
+
+```{r threefactor}
+f1 <- as.data.frame(head(sort(fit$loadings[,1],decreasing = TRUE)))
+f2 <- as.data.frame(head(sort(fit$loadings[,2],decreasing = TRUE)))
+f3 <- as.data.frame(head(sort(fit$loadings[,3],decreasing = TRUE)))
+cbind(rownames(f1),rownames(f2),rownames(f3))
+
+```
+
+Looking at this list, we can again see that factor 2 represents the equipment maintenance skill dimension. But now we can see further skill differentiation. Factor 3 appears to represent a set of STEM skills -- particularly science, technology,  mathematics, and computing skills. Factor 1 represents cognitive skills, such as active learning, critical thinking, and decision making. Note that we do see some overlap in skills across the dimensions, with writing and reading comprehension loading high on factors 1 and 3. 
+
+## Plotting in 3D?
+
+It's too bad we can't visualize these distinctions in 3 dimensions. What, wait...we can do that?
+
+```{r plot3D}
+dim1 <- fit$loadings[,1]
+dim2 <- fit$loadings[,2]
+dim3 <- fit$loadings[,3]
+dat <- as.data.frame(cbind(colnames(skill2),dim1,dim2,dim3))
+
+with(dat,plot3d(dim1,dim2,dim3))
+with(dat,text3d(dim1,dim2,dim3,V1))
+```
+
+```{r fload, echo=FALSE, fig.cap="Factor loadings, 3D plot"} 
+knitr::include_graphics("Q:/My Drive/research/data/onet/f_load3D.jpg")
+
+```
+
+
+This plot reveals a few things. First, we can see the clear distinction between the equipment maintenance factor along the horizontal (x) axis. Second, we can observe vertical differentiation between factor 1 (lower, right, and middle) and factor 3 (upper, right, and back). The cluster of management skills appears to form a tight factor 1 cluster at the bottom right of the graph. 
+
+## Factor scores
+
+So far we have only been discussing how the variables help to define the factors. But we should also consider how the occupations are associated with these latent dimensions. 
+
+For this we need to examine factor scores, which serve as weights for each observation (row) of the dataset. In this instance, each occupation receives a score for each factor. Below you can view the summary statistics for the first three factor scores. 
+
+```{r fscores}
+summary(fit$scores[,1:3])
+```
+
+Note that each factor score is centered on zero (see the mean values). In this instance, the variance within factors declines as we move from factor 1 to factor 3. See how the gaps between Min-Max and 1st-3rd Quarter decline as we move from left to right. 
+
+Let's look at the occupations that best represent each of the individual factors. 
+
+```{r occs}
+scores <- as.data.frame(cbind(skills$title,fit$scores[,1],
+                fit$scores[,2],fit$scores[,3]))
+colnames(scores) <- c("occ","f1","f2","f3")
+s1 <- scores %>% 
+  arrange(desc(f1))
+s2 <- scores %>% 
+  arrange(desc(f2))
+s3 <- scores %>% 
+  arrange(desc(f3))
+cbind(s1$occ[1:8],s2$occ[1:8],s3$occ[1:8])
+
+```
+
+Here we combine the titles for each occupation with their scores across the three factors. Then we can output the top scoring occupations for each factor. We can see some correspondence with our earlier results, with management and supervisory occupations scoring highly on the first factor, engineering and repairing occupations scoring highly on the second factor, and scientific/mathematical occupations scoring highly on the third factor. 
+
+Finally, let's attempt to map occupations based on their skills in 3D space. 
+
+```{r occplot}
+fscore <- as.data.frame(fit$scores[,1:3])
+fscore$occ <- skills$title
+with(fscore,plot3d(Comp.1,Comp.2,Comp.3))
+with(fscore,text3d(Comp.1,Comp.2,Comp.3,occ))
+```
+
+```{r fscore, echo=FALSE, fig.cap="Factor scores, 3D plot"} 
+knitr::include_graphics("Q:/My Drive/research/data/onet/occplot3D.jpg")
+
+```
+
+
+This is a much more difficult plot to interpret because there are so many (873, to be precise) occupational categories. Still, a close inspection reveals that engineering and equipment maintenance occupations (factor 2) stretch out over left side of the graph, managerial and supervisory occupations (factor 1) cling to the bottom right of the graph with Chief Executives, and science/mathematical occupations align with the upper right hand portion of the graph. 
+
+This analyses therefore helps to differentiate between latent dimensions of skills across occupations, as represented by factor loadings. It also differentiates between occupations based on their profiles. These approaches allow for the assignment of numeric weights to skills (based on occupational clustering) or occupations (based on their skill profiles). 
+
+What remains uncertain is how one might identify discrete (rather than continuous) groups of skills or occupations. I'll cover that topic in a later post. 

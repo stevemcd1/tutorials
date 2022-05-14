@@ -1,0 +1,197 @@
+---
+title: "Hierarchical cluster analysis"
+author: "Dr. Steve McDonald"
+date: "1/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Hierarchical Cluster Analysis
+
+The following provides some practical insights as to how one might conduct and interpret hierarchical cluster analysis in R. This procedure allows for the categorization of units based on similar responses or features. 
+
+As with a previous tutorial on factor analysis, I will demonstrate hierarchical cluster analysis using data from the O*NET survey, which collects information about the skills associated with a long list of occupations in the United States. 
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(dendextend)
+library(factoextra)
+
+```
+
+Next you'll need to download the data from O*NET. I've already saved my version separately. Here's the url in case you want to try: [www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx](https://www.onetcenter.org/dl_files/database/db_26_1_excel/Skills.xlsx)
+
+
+```{r load}
+onet <- read_excel("Q:/My Drive/research/data/onet/Skills.xlsx")
+
+```
+
+## Data manipulation
+
+Now that we have our data loaded into R, we'll need to prepare it for our analyses. We'll do three tasks at once...
+
+A. The data contain two different evaluations of skill. Level refers to the amount of skill needed within an occupation. Importance refers to the degree of importance of that skill to the occupation. For this example, we're going to keep only the level scores. See the filter command. 
+
+B. We will only keep the variables that we need, which in this case is just four variables. See the select command.
+
+C. The dataset contains multiple rows for each occupation, each of which provides a value for a different skill. We will need to construct a "tidy" dataset, whereby each row represents a unique occupation, with skill values spread out across multiple variables. This is accomplished via the pivot_wider command.
+
+```{r manip}
+skills <- onet %>% 
+  filter(`Scale Name`=="Level") %>% 
+  subset(select = c("O*NET-SOC Code","Title","Element Name","Data Value")) %>%
+  pivot_wider(names_from = `Element Name`, values_from = `Data Value`)
+
+```
+
+Finally, let's construct a new dataframe that contains only the skill variables. This will make it easier to run some of the analyses. To do this, we'll select only columns 3-37 (ignoring columns 1 and 2)
+
+```{r skill2}
+skill2 <- skills[,3:37]
+```
+
+## Hierarchical Clustering
+
+Let's consider two approaches to clustering. Hierarchical clustering groups observations based on similarity in response values across variables. It uses an algorithm to identify units that are the most similar and then iteratively collapses them into groups. 
+
+### Scaling
+
+The first thing to do is standardize the variables to ensure that the values are in the same metric.  
+
+```{r scale}
+skill3 <- as.data.frame(scale(skill2))
+
+```
+
+The scale command is applied to the skill2 matrix and converted to a dataframe that I named skill3. Now let's look at the differences between the original and the scaled version. Below is a summary of three different variables from the two datasets. 
+```{r compare}
+summary(skill2[, c("Writing", "Persuasion", "Troubleshooting")])
+summary(skill3[, c("Writing", "Persuasion", "Troubleshooting")])
+
+```
+
+The original dataset contains a set of positive values that range between 0 and 6. Standardization of these variables sets the mean values to 0 and each single unit away from zero (positive or negative) reflecting values that are one standard deviation away from the mean. 
+
+### Distance matrix
+
+Hierarchical clustering works best when the values on the variables are converted to a distance matrix. Remember that our O*NET database contains unique occupations along the rows and skill variables along the columns. To identify distance between two occupations, one should compare their values across all of the skills. If the values are identical for those two occupations, then the distance between them is equal to zero. If the values are very different, then the distance will be large.
+
+A distance matrix summarizes those distances between occupations based on (dis)similarity in response values. It contains occupation labels along the rows and the columns, with the embedded values indicating the Euclidean distance between occupations as if they were plotted in two-dimensional space. 
+
+```{r dist}
+d <- dist(skill3)
+
+```
+
+Let's visualize the distances between the occupations.
+
+```{r vizdist}
+fviz_dist(d, gradient = list(low = "#00AFBB", 
+                             mid = "white", 
+                             high = "#FC4E07"))
+
+```
+
+The occupational labels are difficult to make out, but they start from the bottom left corner and spread out horizontally to the right and vertically upward. The line that spans from the bottom left to the top right is the diagonal that compares each occupation to itself. The line is blue because the distance between any occupation and itself is zero. Off-diagonal blue-colored cells represent occupations that are close to one another based on similar skill profiles. Red-colored cells indicate different skill profiles. 
+
+### Estimating hierarchical clusters
+
+The hclust command estimates the hierarchical clusters. It uses the agglomerative technique, such that all observations start as separate groups, but are merged together based on similarity in successive rounds until all observations are part of the same cluster. 
+
+Before running the procedure, one needs to decide on the agglomeration method. There are several choices. Single-link looks for the smallest distance between two observations or clusters to determine which observations (or in our case, occupations) to merge into a single group. Complete-link uses the maximum distance, average-link uses the average distance, and centroid-link uses the distance between each group's central coordinates. 
+
+Deciding between agglomerative methods is an important task and can have a big impact on what the groups look like. One should consider which type of linkage logic makes the most sense in terms of your data. It is also helpful to try multiple approaches and assess the extent to which the grouping outcomes for each method makes sense.
+
+For this example, let's use the complete-link method. 
+
+```{r hclust}
+fit <- hclust(d, method="complete")
+plot(fit)
+
+```
+
+The dendogram shows how the occupations have been grouped. Starting from the bottom, the complete-link algorithm combines highly similar occupations into groups. As we move up the dendogram, the groups of occupations are combined into larger groups of occupations. At the top, all occupations are combined into a single group. 
+
+This analysis gives us many options for how to categorize occupations. One can decide on a number of groups to select. Below I ask for a three category solution. 
+
+```{r groups}
+k3 <- cutree(fit, k=3)
+table(k3)
+plot(fit)
+rect.hclust(fit, k=3, border="red")
+
+```
+
+The cutree command takes the fit object and asks for a three group solution (k=3). Looking at a table of this solution, we can observe a small group (n=41), a medium sized group (n=208), and a large group (n=624). The final command draws a red rectangle around the three groups on the dendogram. 
+
+Alternatively, one can select the height at which to cut the dendogram tree. When we selected k=3, it cut the tree at a height of about 18. Let's say we would like to cut a bit further down to give us more groups. What if we therefore selected a height value of 15? 
+
+```{r height}
+h15 <- cutree(fit, h=15)
+table(h15)
+plot(fit)
+rect.hclust(fit, k=3, border="red")
+rect.hclust(fit, h=15, border="blue")
+
+```
+
+Now we observe a four group solution. Our two smaller groups (on the left side of the dendogram) remain the same, but the larger group is split in two. 
+
+Another way to visualize these groups is to add color to the branches of the dendogram. 
+
+```{r color}
+dend_obj <- as.dendrogram(fit)
+col_dend <- color_branches(dend_obj, h = 15)
+plot(col_dend)
+
+
+```
+
+Deciding on the optimal number of groups is not an easy task. Visually, it might seem appropriate to split the purple group into two separate groups, which might mean selecting an h-value of around 13. But note that this would also cut one occupation from the yellow group. That problem could of course be reconciled through recoding. 
+
+When deciding on the groups -- as well as the specific clustering algorithm to use -- it is imperative to consider the face validity of the units that make up these groups. That is to say, do the groups of occupations make sense? For this we need to examine which occupations were assigned to which groups. 
+
+Let's first take a look at the h15 object.
+
+```{r h15}
+head(h15)
+
+```
+
+Here we can see the first six values in the h15 object, which indicate which groups each occupation belongs to. Let's merge these values with the occupation titles, then compare a random subset of ten occupations for each group.
+
+```{r occ_compare}
+skclust <- as.data.frame(cbind(skills$Title,h15))
+c1 <- skclust[which(skclust$h15==1),1]
+c2 <- skclust[which(skclust$h15==2),1]
+c3 <- skclust[which(skclust$h15==3),1]
+c4 <- skclust[which(skclust$h15==4),1]
+
+set.seed(123)
+c1 <- sample(c1, 10, replace = F)
+c2 <- sample(c2, 10, replace = F)
+c3 <- sample(c3, 10, replace = F)
+c4 <- sample(c4, 10, replace = F)
+
+c1 <- str_sub(c1, end=20)
+c2 <- str_sub(c2, end=20)
+c3 <- str_sub(c3, end=20)
+c4 <- str_sub(c4, end=20)
+
+clust <- as.data.frame(cbind(c1,c2,c3,c4))
+clust
+
+```
+
+The code combines the group labels with the occupation labels. Then I created separate objects for the four groups that contain the occupation labels. Then I take a random sample of ten occupations in each group. Because these labels can be quite long, I truncated the text to just the first 20 characters. Finally, I combined these vectors into a single dataframe and printed the results. 
+
+The first group (the small yellow group from the dendogram) contains mainly engineers. The second group appears to be a mix of scientific and administrative occupations. The third group is mostly service workers. The fourth group contains mainly blue collar technical workers. This is only a brief scan of these groups. One would need to examine these groups more deeply in order to better understand their meanings and to assess the validity of the categorization scheme.
+
+For more on hierarchical clustering, I recommend checking out following website, which is where I drew some of code for my tutorial: 
+[www.datacamp.com/community/tutorials/hierarchical-clustering-R](www.datacamp.com/community/tutorials/hierarchical-clustering-R)

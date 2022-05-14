@@ -1,0 +1,151 @@
+---
+title: "ergm"
+author: "Dr. Steve McDonald"
+date: "03/06/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exponential Random Graph Models
+
+The following provides some guidance for running and interpreting exponential random graph models (or ERGMs). ERGMs are network models that estimate the probability of tie formation. These models are useful because they allow researchers to account for dependencies in network data (rather than assuming independence of units). They use simulation techniques to develop inferential statistics, showing how an observed network is unique from what might be found by chance. 
+
+The first thing to do is to load the statnet package.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(statnet)
+
+```
+
+## Florentine marriage ties
+
+Let's use a network that is available as part of the statnet package. Florentine refers to network data constructed from historical documents on the relationships between powerful families in Renaissance Florence. We will focus on the marriage ties between families. 
+
+```{r load}
+data(florentine)
+flomarriage
+
+```
+
+The output shows that we have 16 vertices or nodes in our network, which represent 16 families. The total edges is 20, which means that we have 20 ties or lines between families based on marriage. This is a non-directed network ("directed = FALSE") because ties are shared between vertices, rather than one node sending a tie to a receiver. 
+
+This network contains a set of vertex attributes. We'll discuss those later. The edges have no attributes. Values for edges are either 1 (a marriage tie exists between families) or 0 (no marriage tie exists between families). These edge values serve with serve as the dependent variable for the ERGM analysis.
+
+Let's plot out the network to see what it looks like. 
+
+```{r plot1}
+par(mar=c(0,0,0,0))
+plot(flomarriage)
+
+```
+
+## Modeling endogenous features
+
+ERGMs allow researchers to ask two different types of questions: 1) how is the structure of ties in the observed network unique from other similar networks, and 2) how are the features of nodes associated with tie formation? 
+
+The first question is about "endogenous" features. These are the aspects of networks that can be used to define a network. A good example is density, which refers to the ratio of ties between nodes to all possible ties between nodes. Dense networks have lots of ties connecting the different actors, whereas ties are rare in less dense (or sparse) networks. An ERGM can tell us whether our network is more or less dense than other networks.
+
+Let's run a basic ERGM on the flomarriage network that models density, then we can talk through what the model tells us. 
+
+```{r flo1}
+set.seed(162809)
+flo1 <- ergm(flomarriage ~ edges) 
+summary(flo1)
+
+```
+
+The first thing I did was to set a random seed. This sets a fixed starting point for the algorithm, ensuring that the results are the same each time we run this model. 
+
+The model sets the flomarriage network as the dependent variable. It's technically estimating the logged of tie formation. The only parameter included in this model is "edges." This allows us to estimate how dense the network is. The summary output reveals a negative and statistically significant coefficient for edges. This means that density in the flomarriage network is significantly lower than what one would expect to see at random.
+
+How does the ERG procedure determine this estimate and significance? It simulates a large number of networks of the same size with random numbers of edges. These simulated networks generate a random distribution of density values. Then the model compares where the density of the flomarriage network fits on that distribution. In this case, the flomarriage density is quite a bit lower than the average density of the simulated networks. 
+
+Let's add another endogenous feature. 
+
+```{r flo2}
+flo2 <- ergm(flomarriage ~ edges +
+               triangle) 
+summary(flo2)
+
+```
+
+Networks may also be defined by the extent to which they form triangles. This feature shows up a lot in naturally occurring networks due to a process called transitivity. If I am friends with Monique and I am also friends with Hector, the chances are that Monique and Hector will also become friends with one another. But marriage ties are different from friendship ties and here we can see that the tendency to form marriage triangles is not statistically significant.
+
+For ERGMs to develop good fitting models, one should always include a density parameter. A variety of other endogenous features may be added as well. But note that each additional parameter adds further complexity to the model and can make hinder model convergence. 
+
+## Exogenous features
+
+Exogenous features refer to node level characteristics. Instead of telling us how common these features are in the network (as we saw with endogenous features), parameter estimates for exogenous features tell us about the extent to which node level characteristics are associated with tie formation. 
+
+When looking at the flomarriage network object, we saw several node level characteristics that might be associated with the formation of marriage ties. For example, we have a variable for the wealth of each family. We might assume that wealthy families have a tendency to form strategic marriage ties with other families. Let's run an ERGM that tests this. 
+
+```{r flo3}
+flo3 <- ergm(flomarriage ~ edges + 
+               nodecov("wealth"))
+summary(flo3)
+
+```
+
+The nodecov command allows one to model node covariates. The results show us that wealth is positively and significantly associated with tie formation. Because ERGMs approximate logistic regression models, the coefficients indicate the change in the logged odds of tie formation due to a one unit increase in the independent variable. 
+
+Another exogenous feature that can be examined is the (dis)similarity in the node level characteristics of two different actors. Similarity effects are essentially modeling the process of homophily or in other words how people who are similar to one another tend to form ties. As an example, we can examine the priorates variable, which measures the number of legislative seats controlled by each of the Florentine families. 
+
+```{r flo4}
+flo4 <- ergm(flomarriage ~ edges + 
+               nodecov("wealth") +
+               absdiff("priorates"))
+summary(flo4)
+
+```
+
+The absdiff command estimates the absolute value of the difference between the number of priorates for each combination of actors in the network. Consequently, this parameter operates as an inverse estimate of homophily. The negative coefficient is in the general direction of homophily, implying that ties tend to form more often among families with similar numbers of priorates (or smaller gaps in priorate differences). However, this is not a statistically significant effect, so it fails to confirm our hypothesis about homophily. 
+
+## Goodness of fit
+
+Remember that ERG models are designed to simulate a large number of networks. Those networks should generate a stable distribution of parameter estimates for each of the covariates in the model. Those distributions provide the basis for making statistical inferences about the extent to which the observed estimates deviate from the norm. Model fit depends mainly on the extent to which the ERG procedure has effectively produced stable parameter distributions.  
+
+To assess goodness of fit for the previous model, let's run the  model again, but this time I'll add the control option to force the running of Monte Carlo simulation chains. Then we can assess how well those simulations worked. 
+
+```{r gof1}
+flo4 <- ergm(flomarriage ~ edges + 
+               nodecov("wealth") +
+               absdiff("priorates"),
+               control = control.ergm(force.main = T))
+
+mcmc.diagnostics(flo4)
+
+```
+
+We can observe numerous diagnostics, but the key summary statistics are at the end, just before the "Sample Statistics" plots. The "Joint P-value" allows us to assess overall convergence and the "Individual P-values" provide information about convergence for specific parameter estimates. P-values range from 0-1, and low values (P < 0.1) are considered to be problematic because they imply that the simulations failed to produce a normal distribution of estimates. 
+
+In this case, we can see that the p-values all exceed 0.1, which is good, though the edges and wealth parameters are only slightly above that threshold. Therefore, it is a good idea to visually inspect the simulated values for those covariates. 
+
+Take a look at the "Sample statistics" plots. The left column shows the sequencing of estimates generated from the simulations. The horizontal line represents the mean value. What we like to see is a mix of estimates that hover around the mean, a little above and a little below the line. Poor fit is indicated by major deviations from the line on either side. All three estimates appear to match what we are looking for; some minor deviations, but nothing more. 
+
+Now look at the right column, which plots the distribution of estimates. In this case, we are looking for normal curves that center on a mean of zero. While these are not perfectly normal, they do provide decent approximations of normal distributions. Consequently, I think we can consider this model to provide good, if not great, fit to the observed data. 
+
+## Improving fit
+
+Are there ways to improve fit? Of course. The most obvious way is to tweak the models by adding, subtracting, or modifying the parameters. Another option is to provide a better starting point for the simulations -- one that better  facilitates model convergence. Remember that the simulations begin from a random starting point. If we have difficulty generating models that converge, we can save the final estimates from an initial model and then use those estimates as a starting point for a new ERG procedure. Here's an example of how to do that. 
+
+```{r gof2}
+coefs <- as.numeric(coef(flo4)) 
+
+flo5 <- ergm(flomarriage ~ edges + 
+               nodecov("wealth") +
+               absdiff("priorates"),
+             control = control.ergm(init = coefs,
+                                    force.main = T))
+
+mcmc.diagnostics(flo5)
+
+```
+
+This chunk of code saves the estimates from the previous model. I have added a new option to the control function ("init = coefs") which tells R to use those previous estimates as the starting point for this model. When examining the diagnostics, notice that the p-values have increased substantially to the point where they are all well above the 0.1 threshold. This new model therefore appears to fit the data better. 
+
+There are other ways to improve model fit, such as adjusting the MCMC interval, burnin, and sample size. You should consult the [ergm documentation](https://cran.r-project.org/web/packages/ergm/vignettes/ergm.pdf) for a detailed explanation of those options. 
+
+For a deeper dive, I can also recommend the [statnet ergm tutorial](http://statnet.org/Workshops/ergm_tutorial.html).

@@ -1,0 +1,201 @@
+---
+title: "Margins for OLS"
+author: "Dr. Steve McDonald"
+date: "3/15/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generating predictions from OLS models
+
+While coefficients in OLS are fairly intuitive, it is often helpful to estimate average marginal effects, conditional marginal effects, and predicted values from regression models. This tutorial provides an overview of how to obtain and present these estimates.
+
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse) # always load the tidy tools
+library(haven) # to read in Stata .dta files
+library(marginaleffects) # package for estimating margins
+
+```
+
+Let's read in some educational data for our example. 
+
+```{r load}
+mlmdata <- read_dta("https://stats.idre.ucla.edu/stat/examples/imm/imm10.dta")
+glimpse(mlmdata)
+
+```
+
+Create a dummy variable for female. Estimate a model predicting mathematics scores.
+
+```{r ols}
+mlmdata$female <- ifelse(mlmdata$sex == 2, 1, 0)
+ols <- lm(math ~ homework + ses + female + white, mlmdata)
+summary(ols)
+
+```
+
+Homework and socio-economic status are positively and significantly associated with math scores. Gender and race differences in math scores are not statistically significant.
+
+Average marginal effects (AME) refer to the mean differences in the outcome for each unit of the independent variables. In a basic OLS regression with no interactions and no curvilinear terms, AME is analogous to the B coefficients. 
+
+```{r ame}
+head(marginaleffects(ols))
+
+```
+
+The marginaleffects command generates a series of AME estimates conditional on the other variables. Just the first six are presented here. Notice that the effect values for homework (dydx) are identical to its coefficient in the model, regardless of the conditions (see the variables to the right). 
+
+So why are AMEs useful? Why not just rely on the coefficient estimates? Well, AMEs can be helpful in interpreting more complex models (like generalized linear models, logit models, count models, etc.). I will address this issue in another tutorial. But a second reason, and one that applies to this tutorial, is that AMEs can be useful for evaluation of conditional effects and interaction effects. 
+
+## Conditional Marginal Effects
+
+Let's review conditional effects. First, I will use the plot_cme command to display the AME for a single variable (SES), conditional on another variable (white). 
+
+```{r cme1}
+plot_cme(ols, effect = "ses", condition = c("white"))
+
+```
+
+The above script produces a straight horizontal line, suggesting that the marginal effects of SES do not vary across conditions of race. This is because this model estimates independent effects of SES and race, which is to say, individual effects are not contingent on the effects of the other variables. 
+
+Now let's see what happens to the margins if we add an interaction effect between SES and race to the original. 
+
+```{r cme2}
+ols2 <- lm(math ~ homework + ses + female + white + ses:white, mlmdata)
+plot_cme(ols2, effect = "ses", condition = c("white"))
+
+```
+
+The new plot shows that the effects of SES are contingent on race. Those effects are stronger for white students (white = 1) than for non-white students (white = 0). An examination of the model estimates shows that the interaction effect (SES*white) is statistically significant. 
+
+```{r ols2}
+summary(ols2)
+
+```
+
+## Predicted Values
+
+In addition to estimating average and conditional marginal effects, we might also want to generate predicted values for various groups in the models. For this, I'll start with the orginal model without the interaction term. 
+
+```{r cap1}
+plot_cap(ols, condition = c("ses"))
+
+```
+
+Note that the scale for the y-axis is different. Instead of estimating marginal effects (i.e., regression coefficient estimates or B values), the plot_cap command estimates predicted values on the dependent variable. The range of predicted values is from math scores of about 35 to 65. Now let's add race as an additional condition. 
+
+```{r cap2}
+plot_cap(ols, condition = c("ses", "white"))
+
+```
+
+Instead of a single line, we now get two lines or separate plots for white and non-white students. Those two lines are parallel, with white students having a constant advantage in math scores at each level of SES. 
+
+Remember that this is the non-interactive model, which means that we have modeled the effects of SES and race to be independent of one another. Thus, the effect of SES is unaffected by race. The constant advantage of whites over non-whites is equal to the white coefficient from that model (1.0309). 
+
+Now let's run plot_cap again, this time to examine the predictions from the interactive model.
+
+```{r cap3}
+plot_cap(ols2, condition = c("ses", "white"))
+
+```
+
+The inclusion of the statistical interaction allows the predicted values for SES to vary across race categories. The plot suggests that SES has a greater positive impact on math scores for white students than non-white students. 
+
+The error regions of the graph also show us where we can be especially confident of the differences in those effects. In this case, the predictions significantly diverge at around SES > .25, where the error regions separate.
+
+This shows an interaction between a categorical and a continuous variable. How about plotting predictions from an interaction between two continuous variables? 
+
+```{r cap4}
+ols3 <- lm(math ~ homework + ses + female + white + homework:ses, mlmdata)
+plot_cap(ols3, condition = c("homework", "ses"))
+
+```
+
+The ols3 model estimates an interaction between SES and homework. The plot_cap command shows how the homework predictions vary across different levels of SES. The SES levels are transformed into quintiles and plotted as 5 separate lines. 
+
+The plot shows vertical distances between the lines (reflecting SES differences), but the slopes are very similar. This shows that there is no statistical interaction between these two factors (which can be confirmed by reviewing the model statistics). 
+
+How about non-linear estimates from models? Below I add a quadratic term to the model to estimate whether there are any threshold effects on homework. Then we can examine differences in the marginal effects and predictions. 
+
+```{r quad}
+ols4 <- lm(math ~ homework + I(homework^2) + ses + female + white , mlmdata)
+plot_cme(ols4, effect = "homework", condition = c("homework"))
+plot_cap(ols4, condition = c("homework"))
+
+```
+
+The addition of the squared term for homework allows the effect of homework on math scores to vary across different values. And the cme plot does show a modest increase in the homework effect on math scores as people devote more hours to homework. 
+
+The predictions reflect the increasing homework returns to math scores. But the upward curve is subtle and inspection of the model estimates show that...
+
+```{r ols4}
+summary(ols4)
+
+```
+
+...neither the base term nor the quadratic term for homework are statistically significant. A linear term alone offers a much better fit to the data. 
+
+## Prediction datagrids
+
+We might want to generate predictions for very specific conditions and contrasts. For this we can turn to the predictions command, which creates a datagrid that we can use for a table or (better yet) prediction plotting. Here is an example from our earlier model that interacts SES and race.
+
+```{r pred1}
+predictions(ols2, newdata = datagrid(white = c(0,1), 
+                                    ses = c(seq(-2,2,.5))))
+
+```
+
+Here I asked for predictions for white and non-white students. I also asked for specific values of SES -- a sequence of values from -2 to 2 with an interval of 0.5. Now let's plot these predictions using ggplot. 
+
+```{r pred2}
+predictions(ols2, newdata = datagrid(white = c(0,1), 
+                                    ses = c(seq(-2,2,.5)))) %>%
+  ggplot(aes(x = ses, y = predicted, ymin = conf.low, ymax = conf.high)) +
+  geom_ribbon(aes(fill = factor(white)), alpha = .2) +
+  geom_line(aes(color = factor(white)))
+
+```
+
+A few notes on the code. I started with the same prediction command from above, then used piping (%>%) to apply ggplot to the datagrid output. The aes option sets the y-axis to predicted, which provides the predicted values in the datagrid table. Low and high confidence interval values provide the error regions, plotted using the geom_ribbon command, with alpha = .2 setting the transparency for those error regions. The white variable must be treated as a factor variable to be used in the ribbon and line commands. 
+
+The results of the plot are very similar to what we achieved previously with the plot_cap command. But the prediction command provides more flexibility in setting the prediction conditions. 
+
+What if instead of error regions we wanted to estimate error bars? This could be useful when we have an x variable that is categorical instead of continuous. Here is how I did this for our SES*white interaction. 
+
+```{r pred3}
+ols2_pred <- predictions(ols2, newdata = datagrid(white = c(0,1),
+                                                ses = c(seq(-2,2,.5))))
+
+p <- ggplot(data = ols2_pred, aes(x = ses,
+                                  y = predicted, 
+                                  color = factor(white),
+                                  ymin = conf.low, 
+                                  ymax = conf.high))
+
+p + geom_pointrange() + 
+  labs(x = "SES", y = "Math Score") +
+  ggtitle("Predicted Math Scores by SES and Race") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_discrete(name = "Race", 
+                       labels = c("Non-white","White"))
+
+
+```
+
+First I saved the predictions as an object (ols2pred). Then I saved a base ggplot data statement (p). Finally, I generated a plot that builds on p, using geom_pointrange to plot the error bars, setting a title (ggtitle), centering the title (theme), and adjusting the legend (scale_color_discrete). 
+
+For more on marginaleffects: 
+[https://vincentarelbundock.github.io/marginaleffects/](https://vincentarelbundock.github.io/marginaleffects/)
+
+Many other margins and prediction packages exist. For example: 
+[https://cran.r-project.org/web/packages/margins/vignettes/Introduction.html](https://cran.r-project.org/web/packages/margins/vignettes/Introduction.html)
+
+I also recommend Kieran Healy's chapter on modeling in his data visualization book: 
+[https://socviz.co/modeling.html](https://socviz.co/modeling.html)
+

@@ -1,0 +1,66 @@
+---
+title: "Plot Coefficients"
+author: "Dr. Steve McDonald"
+date: "3/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plot coefficients
+
+Here is a super quick tutorial on plotting coefficients from OLS models. This is highly recommended for presenting coefficients in research papers and vital for presentations at conferences.  
+
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse) # always bring in the tidy tools
+library(haven) # to read in Stata .dta files
+library(jtools) # contains the plotting procedures
+library(broom.mixed) # separate package called on by plot_coefs
+
+```
+
+Let's read in some educational data for our example. 
+
+```{r load}
+mlmdata <- read_dta("https://stats.idre.ucla.edu/stat/examples/imm/imm10.dta")
+glimpse(mlmdata)
+
+```
+
+Create a dummy variable for female. Estimate two models: one predicting mathematics scores and one predicting the amount of homework done per week.
+
+```{r models}
+mlmdata$female <- ifelse(mlmdata$sex == 2, 1, 0)
+ols1 <- lm(math ~ ses + female + white, mlmdata)
+ols2 <- lm(homework ~ ses + female + white, mlmdata)
+
+summary(ols1)
+summary(ols2)
+
+```
+
+Here we can see that socio-economic status is a strong positive predictor of both math scores and homework. Also, non-white students do more homework than white students. 
+
+Now we'll plot out these coefficients.
+
+```{r plot}
+plot_coefs(ols1, ols2,
+           coefs = c("SES" = "ses","Female" = "female","White" = "white"),
+           scale = FALSE, # generates standardized coefficients when TRUE
+           robust = FALSE, # robust standard errors when TRUE
+           legend.title = "Academics",
+           model.names = c("Math scores","Homework")) 
+
+```
+
+As you can see, this is a visually appealing way to present regression coefficients side-by-side. Significance is observed for coefficients that have error bars which fail to cross the dotted line. 
+
+In this case, the SES error bars are far to the right of the dotted line, indicating positive and significant relationships. The error bar for the White coefficient in the Homework model is just to the left of the dotted line, indicating a negative and significant relationship. All other coefficient error bars cross the dotted line, indicating insignificant relationships. 
+
+Further documentation on this procedure: 
+[https://jtools.jacob-long.com/reference/plot_summs.html](https://jtools.jacob-long.com/reference/plot_summs.html)
+
