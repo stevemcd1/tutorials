@@ -1,0 +1,138 @@
+---
+title: "Nested Regression Tables"
+author: "Dr. Steve McDonald"
+date: "6/16/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generating and Exporting Nested Regression Tables
+
+This tutorial takes on two super important tasks. First, how can we generate tables that present side-by-side results from regression analyses? Nested tables help us to better understand social processes by examining change in coefficients across models. Second, how can we export those tables to a format that is useful for interpretation and presentation? Conducting analyses means running a plethora of models, so having a quick and easy way to export these results is indispensable. The R package "huxtable" helps us to accomplish both goals. 
+
+The first thing to do is to load the necessary packages.
+
+```{r lib, results=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse) # always load the tidy tools
+library(haven) # to read in Stata .dta files
+library(huxtable) # package for estimating margins
+
+```
+
+Let's read in some educational data for our example. 
+
+```{r load}
+mlmdata <- read_dta("https://stats.idre.ucla.edu/stat/examples/imm/imm10.dta")
+glimpse(mlmdata)
+
+```
+
+## Generating a formatted regression table
+
+Create a dummy variable for female. Estimate a model predicting mathematics scores.
+
+```{r ols}
+mlmdata$female <- ifelse(mlmdata$sex == 2, 1, 0)
+ols <- lm(math ~ homework + ses + female + white, mlmdata)
+summary(ols)
+
+```
+
+Homework and socio-economic status are positively and significantly associated with math scores. Gender and race differences in math scores are not statistically significant.
+
+Let's use huxreg to generate a table display these findings.
+
+```{r hux}
+huxreg(ols)
+
+```
+
+The table presents the information in a format that is common to see in social science journals. Before we get to exporting, let's take a look at some of the options. 
+
+## huxtable options
+
+One can adjust various aspects of the table. First, it is possible to decide on the summary statistics. In this case, we are asking R for only the number of observations and the R-squared value, with the original quotations referring to the label for the statistic (e.g., 'N') and the name of the object (e.g., "nobs") in the summary list. 
+
+Second, we can control the note at the bottom of the table. In this case, the script asks for a note about the stars for significance and adds text describing the data. 
+
+Third, we can adjust the coefficient labels. Again, the first quoted text describes what we want the label to be (e.g., "Homework (hours)"), while the second calls on the variable name ("homework").
+
+```{r opts}
+huxreg(ols,
+       statistics = c('N' = "nobs", 'R-squared' = "r.squared"),
+       note = "{stars}
+        Source: UCLA example education data",
+       coefs = c("Homework (hours)" = "homework",
+                 "Socio-economic status (SES)" = "ses",
+                 "Female" = "female",
+                 "White" = "white"))
+
+```
+
+Looks nice, right!
+
+## Exporting huxtables
+
+There are several options for exporting these tables, but probably the most useful option is exporting to a Word document. 
+
+The script below is identical to the previous script, with one important exception. After generating the table, I added a piping option (%>%) in order to export the table to a Word doc via the quick_docx command. Note that you will likely need to set a working directory in order to save this file to wherever you want it to go. 
+
+```{r exp1}
+huxreg(ols,
+       statistics = c('N' = "nobs", 'R-squared' = "r.squared"),
+       note = "{stars}
+        Source: UCLA example education data",
+       coefs = c("Homework (hours)" = "homework",
+                 "Socio-economic status (SES)" = "ses",
+                 "Female" = "female",
+                 "White" = "white")) %>%
+  quick_docx(file = "example_huxreg.docx")
+
+```
+
+## Exporting a nested table
+
+The last thing I want to show is how to generate and export a second model to appear alongside the first. Below I save the results from a model that is the same as the initial ols model, except that it includes an interaction between SES and white. 
+
+Once these results are saved, we need to generate a list including the name of the two models. Then we can feed that list into the huxreg command to generate the nested table. Below I display what it looks like before adding the export option. 
+
+```{r nest}
+ols2 <- lm(math ~ homework + ses + female + white + ses:white, mlmdata)
+
+models <- list("Model 1" = ols, "Model 2" = ols2)
+
+huxreg(models,
+       statistics = c('N' = "nobs", 'R-squared' = "r.squared"),
+       note = "{stars}
+        Source: UCLA example education data",
+       coefs = c("Homework (hours)" = "homework",
+                 "Socio-economic status (SES)" = "ses",
+                 "Female" = "female",
+                 "White" = "white",
+                 "SES*white" = "ses:white"))
+
+```
+
+And now let's run the same command with the export option to create a new Word document. 
+
+```{r exp2}
+huxreg(models,
+       statistics = c('N' = "nobs", 'R-squared' = "r.squared"),
+       note = "{stars}
+        Source: UCLA example education data",
+       coefs = c("Homework (hours)" = "homework",
+                 "Socio-economic status (SES)" = "ses",
+                 "Female" = "female",
+                 "White" = "white",
+                 "SES*white" = "ses:white")) %>%
+  quick_docx(file = "example_huxreg2.docx")
+
+```
+
+With the output exported to Word, one can make any number formatting changes to the table. 
+
+For more on this package, I recommend the following bookdown chapter. Note that you can use huxtable to generate descriptive statistics tables as well: 
+[https://bookdown.org/sarahwerth2024/RegressionLabsBook/lab-5-r.html](https://bookdown.org/sarahwerth2024/RegressionLabsBook/lab-5-r.html)
