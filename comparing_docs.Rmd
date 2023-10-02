@@ -138,7 +138,7 @@ Note that when we estimate cosine similarity, the cosine value is reversed and s
 To do this, let's go back to the original data (sotu_whole) and generate a tidy version of the text data. 
 
 ```{r tidy}
-sotu_words <- sotu_whole |> 
+sotu_words <- sotu_clean |> 
   unnest_tokens(word, text) |> 
   anti_join(stop_words, by = "word") |> 
   count(president, word) |> 
