@@ -566,7 +566,7 @@ estimate similarity over correlation coefficients (like Pearson’s or
 Jaccard), mostly because cosine estimates are more stable for sparse
 (lots of zeros) matrices and high dimensional solutions (rather than
 just two like we saw with MDS).</p>
-<p>To do this, let’s go back to the original data (sotu_whole) and
+<p>To do this, let’s go back to the original data (sotu_clean) and
 generate a tidy version of the text data.</p>
 <pre class="r"><code>sotu_words &lt;- sotu_clean |&gt; 
   unnest_tokens(word, text) |&gt; 

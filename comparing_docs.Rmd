@@ -135,7 +135,7 @@ Now consider those lines to represent a vector of words. If two word vectors con
 
 Note that when we estimate cosine similarity, the cosine value is reversed and scaled to 0-1, such that higher values are more similar and lower values are more different. Cosine is typically preferred to estimate similarity over correlation coefficients (like Pearson's or Jaccard), mostly because cosine estimates are more stable for sparse (lots of zeros) matrices and high dimensional solutions (rather than just two like we saw with MDS).
 
-To do this, let's go back to the original data (sotu_whole) and generate a tidy version of the text data. 
+To do this, let's go back to the original data (sotu_clean) and generate a tidy version of the text data. 
 
 ```{r tidy}
 sotu_words <- sotu_clean |> 
