@@ -17,4 +17,5 @@ This set is incomplete. I am planning to add more to this set over time.
 5. [Margins and Predictions for OLS](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/margins_ols.html)
 6. [Nested Regression Tables](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/nested.html)
 7. [Exponential Random Graph Models](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/ergm.html)
+8. [Comparing Text Documents](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/ergm.html)
 
