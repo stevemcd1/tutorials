@@ -1,0 +1,286 @@
+---
+title: "Comparing text documents"
+author: "Steve McDonald"
+date: "2023-10-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Comparing text documents
+
+This tutorial provides an example of how to compare text documents using a series of quantitative techniques in R.
+
+Let's begin by loading the packages we need. 
+
+```{r packages, results='hide', warning=FALSE, message=FALSE}
+library(sotu)
+library(tidyverse)
+library(tidytext)
+library(readtext)
+library(widyr)
+library(tm)
+
+```
+
+## Load State of the Union Data
+
+We'll use the State of the Union speeches from the United States as an example. Because we have already loaded the sotu package, the data have been saved to a temporary directory. The script below identifies the file paths to the data files and then brings them into the global environment as R objects. Finally, we can take the meta data object (sotu_meta) and combine it with the text from the speeches into a single data frame that we will call "sotu_whole." 
+
+```{r load}
+file_paths <- sotu_dir()
+sotu_texts <- readtext(file_paths)
+
+sotu_whole <- sotu_meta |> 
+  arrange(president) |>  
+  bind_cols(sotu_texts)
+
+glimpse(sotu_whole)
+
+```
+
+## Tokenize
+
+Next it will be important to clean the text data. The code below modifies the text field by making all text lower case, removing all punctuation and numbers, and replacing all hard returns at the end of lines ("\\n") with spaces. 
+
+Once the text field is clean, we can tokenize the data by unnesting the tokens and removing all stop words. Once that is finished, let's check out the first six lines of the data. 
+
+```{r tokenize}
+
+# clean
+sotu_clean <- sotu_whole |> 
+  mutate(
+    text = str_to_lower(text),
+    text = str_remove_all(text, "[:punct:]"),
+    text = str_remove_all(text, "[:digit:]"),
+    text = str_replace_all(text, "\\n", " "))
+
+# tokenize
+tidy_sotu <- sotu_clean |> 
+  unnest_tokens(word, text) |> 
+  anti_join(stop_words)
+
+head(tidy_sotu)
+
+```
+
+## Create a document term matrix
+
+In order to make comparisons between documents, we'll need to transform the tokenized data into a document term matrix. This matrix will include the document units along the rows and the individual words along the columns. Values within the matrix will represent presence (1 or more) or absence (0) of words within specific speeches. These values will ultimately help us to determine how similar each document is to another on the basis of co-occurrence of terms. 
+
+```{r dtm}
+sotu_dtm <- tidy_sotu |> 
+  count(president, word)  |>  
+  cast_dtm(president, word, n) 
+
+```
+
+Note that we have a choice of document units in this case, as individual speeches are nested within presidents. For this exercise, I have decided to examine presidents as the key units, thereby all speeches from a single president will be lumped together. You can tell this in the code by reference to the "president" field. If you wanted to examine each speech as a unit, you would reference the "doc_id" field instead. 
+
+Let's take a closer look at the dtm by extracting the matrix from the dtm object. Then let's print the first five columns and rows. 
+
+```{r matrix}
+sotu_mat <- as.matrix(sotu_dtm)
+sotu_mat[1:5,1:5]
+
+```
+
+## Term frequences and associations 
+
+We can use the tm package to examine the sets of words that comprise the documents and how those words are related. findFreqTerms identifies all of the words that appear a certain number of times across the corpus -- in this case, at least 5000 times. 
+
+findAssocs asks for all terms that are highly correlated with one of the terms that appears in the documents. When terms are highly correlated, that means they often appear in the same president's speeches. In this case, I asked for words that are highly correlated (at r >= .85) with the word "terrorism."
+
+``` {r freq}
+findFreqTerms(sotu_dtm, lowfreq = 5000)
+findAssocs(sotu_dtm, "terrorism", corlimit = 0.85)
+
+```
+
+## Multidimensional scaling
+
+Organizing a corpus into a dtm allows us to use a series of classic statistical tools often used to classify data. Multidimensional scaling identifies latent dimensions (or scales) that help to differentiate units based on the co-occurrence of variables. In this case, the units are presidential speeches and the variables are words. If we can identify two dimensions of differentiation, it is then possible to visualize distances between documents across two dimensional space. 
+
+To begin, we need to generate a matrix of distances between document units (rows) based on the co-occurrence of words (columns). Drawing on graph theory, you can think of speeches and words represented by points on a graph. The speeches are closer to words when they contain lots of those words. Now imagine traveling from one speech to the next. The distance will be longer if two speeches share few words together. The distance will be shorter when the speeches use many of the same words.
+
+With the "dist" command, we generate a distance matrix (d) based on the values from the dtm. Then, the "cmdscale" command estimates eigenvector scores (or scales, similar to factor scores) across two dimensions (k=2). We then can take a peek at the fit object. 
+
+```{r mds}
+d <- dist(sotu_mat)
+fit <- cmdscale(d,eig=TRUE, k=2) 
+glimpse(fit) 
+
+```
+
+The fit object contains a matrix of 42 rows (for each president) by 2 columns (for two sets of scaling values). Now we get to the fun part! Let's use those scales to observe correspondence between presidents based on their speeches. The first dimension will represent x coordinates and the second will represent y coordinates. 
+
+```{r coords}
+x <- fit$points[,1]
+y <- fit$points[,2]
+plot(x, y, xlab="Coordinate 1", ylab="Coordinate 2",
+     main="Metric MDS", type="n")
+text(x, y, labels = row.names(sotu_mat), cex=.7)
+
+```
+
+Despite a bit of "bunching" in the graph, we can tell a few things. Jimmy Carter's speeches appear to be quite different from those of the other presidents. We can also see quite a bit of variance across the horizontal dimension of the graph, from say Theodore Roosevelt on the left to Warren G. Harding on the right. There is also a "branch" that extends up from the right side of the graph, which appears to include a more modern set of presidents. MDS does not tell us much about why we see these distinctions -- it just points us to latent patterns in the data. We need to rely on other forms of data analysis to gain further clues. 
+
+## Cosine similarity
+
+A common statistic used to differentiate texts is cosine similarity, a trigonometric function that estimates the angle between two vectors across multidimensional space. Consider a graph with an x and y axis. Now imagine two lines emerging from the intersection of the axes (0,0) and shooting out toward the upper right hand corner of the graph. The angle that exists between those lines (from 0 to 90 degrees) can be represented by the cosine function. Smaller cosine values represent greater closeness between the two lines, with a value of zero meaning that the lines are identical and a value of 90 meaning that the lines are entirely distinct (or orthogonal).
+
+Now consider those lines to represent a vector of words. If two word vectors contain the exact same set of words, their cosine score would be zero. If the words are entirely distinct, they will have a cosine score of 90. 
+
+Note that when we estimate cosine similarity, the cosine value is reversed and scaled to 0-1, such that higher values are more similar and lower values are more different. Cosine is typically preferred to estimate similarity over correlation coefficients (like Pearson's or Jaccard), mostly because cosine estimates are more stable for sparse (lots of zeros) matrices and high dimensional solutions (rather than just two like we saw with MDS).
+
+To do this, let's go back to the original data (sotu_whole) and generate a tidy version of the text data. 
+
+```{r tidy}
+sotu_words <- sotu_whole |> 
+  unnest_tokens(word, text) |> 
+  anti_join(stop_words, by = "word") |> 
+  count(president, word) |> 
+  ungroup()
+
+```
+
+Now we'll use the pairwise similarity function to obtain the cosine similarity scores. 
+
+```{r cosine}
+closest <- sotu_words |> 
+  pairwise_similarity(president, word, n) |> 
+  arrange(desc(similarity))
+
+head(closest)
+
+```
+Here we can see several presidents whose speeches were highly similar with one another. 
+
+If we wanted to identify similarity scores for a single president, we could simply filter on the closest object as so.
+
+```{r filter}
+closest |> 
+  filter(item1 == "Donald Trump")
+
+```
+
+## From similarity to distances
+
+Cosine similarity is a useful metric on its own, but we can also use cosine similarity to generate a distance matrix. We will do this as a step toward one final example: using cluster analysis to identify distinct groups of documents. 
+
+The following code creates a distance matrix from the cosine similarity scores. First we will need to convert the closest object to a data frame with three variables: 1) president 1, 2) president 2, and 3) cosine similarity score. Then we will use the as.dist function to create a president (rows) by president (columns) matrix with (i,j) values representing the cosine similarity scores for each presidential combination. 
+
+Second, we will convert those values to distances using the as.dist function for a second time. This time, though, we will need to reverse the values (1 - closest_mat) because we need to convert those cosine similarities into differences, with higher values referring to differences rather than similarities.
+
+```{r distances}
+closest <- as.data.frame(closest)
+closest_mat <- as.dist(xtabs(closest[, 3] ~ closest[, 2] + closest[, 1]))
+cdist <- as.dist(1 - closest_mat)
+
+```
+
+## Cluster analysis
+
+Now that we have our distance matrix, we can use a hierarchical clustering algorithm to group presidents based on similar speeches. This algorithm relies on a distance matrix to make a series of sequential "cuts" on the units in order to maximize the distances between groups and minimize the distances among groups. 
+
+The procedure occurs in stages. The algorithm identifies a single cut in the first stage, splitting the presidents into two distinct groups. In the second stage, the algorithm examines those two groups and looks for the optimal place to split each of them. At the final stage, all units are apportioned to their own group. 
+
+The code below runs the hierarchical clustering analysis and plots out the dendogram to visualize the stages. 
+
+```{r hclust}
+hc <- hclust(cdist, "ward.D")
+
+par(mar = c(0, 0, 2, 0))
+plot(hc, main = "Hierarchical clustering of State of the Union Addresses",
+     ylab = "", xlab = "", yaxt = "n")
+
+```
+
+Having each unit (in this case, all 42 presidents in the corpus) assigned to separate groups is not especially helpful analytically. Instead, it would be preferable to have a smaller number of groups that we can use to distinguish among units. To that end, we will want to tell R to provide a clustering solution for a set number of groups. 
+
+How many groups is optimal? There is not a hard and fast rule for this decision. I like to look at the dendogram to see which groupings make the most sense before deciding on an optimal value for k. In this instance, I decided on 6 groups. To identify the groups, we can then use the cutree command. 
+
+```{r cutree}
+clustering <- cutree(hc, 6)
+table(clustering)
+
+```
+
+The table shows us the numbers of presidents in each of our clusters, which I have saved into an object called "clustering."
+
+Now if we want to observe those groups in the dendogram, we can do so by adding the rect.hclust option to the plot.
+
+```{r rectangle}
+par(mar = c(0, 0, 2, 0))
+plot(hc, main = "Hierarchical clustering of State of the Union Addresses",
+     ylab = "", xlab = "", yaxt = "n")
+rect.hclust(hc, 6, border = "red")
+
+```
+
+It should be clear at this point that the clusters are almost entirely historically based. That tells us that presidents often copy their predecessors in the language that they use in their speeches. But the cut points are interesting, too, as they represent significant shifts in language use. This is sometimes related to a major event, like the end of World War II. 
+
+## Merge cluster categories with original data
+
+The cluster categorization could be useful for further analyses, perhaps with the document metadata. With this in mind, it would be good to merge those categories with the original dataset. 
+
+To do this, we'll need to create a data frame that contains the names of the presidents along with the numbers of their groups. Then we can merge on presidents' names to add the cluster column into the original data frame.
+
+```{r remerge}
+cluster <- as.numeric(clustering)
+president <- rownames(as.data.frame(clustering))
+
+clust_df <- as.data.frame(cbind(president,cluster))
+
+sotu_clean <- sotu_clean |>  
+  left_join(clust_df, by = "president")  |> 
+  arrange(cluster)
+
+glimpse(sotu_clean)
+
+```
+
+## Words that define clusters
+
+Finally, we can use the cluster variable to identify the terms that best define each of the clusters. For this, let's tokenize the data by clusters (instead of presidents), bind the tf-idf scores to identify meaningful terminology within each cluster, and finally visualize the top tf-idf terms for each cluster. 
+
+```{r tf-idf}
+clust_words <- sotu_clean |> 
+  unnest_tokens(word, text) |> 
+  count(cluster, word, sort = TRUE)
+
+# add tf-idf
+clust_words <- clust_words %>%
+  bind_tf_idf(word, cluster, n)
+
+# visualize high tf-idf words ##
+clust_words |> 
+  arrange(desc(tf_idf)) |> 
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(cluster) |>  
+  top_n(15) |>  
+  ungroup() |> 
+  ggplot(aes(word, tf_idf, fill = cluster)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~cluster, ncol = 2, scales = "free") +
+  coord_flip()
+
+```
+
+Here we can identify some distinguishing lexical features of the different clusters of presidents. Without looking at the sotu_clean data frame, can you identify the historical periods which these groups come from?
+
+## References
+The code presented here was adapted from several sources, especially the following...
+
+Engel, Claudia and Scott Bailey. 2022. Text Analysis with R. https://cengel.github.io/R-text-analysis/
+
+Jones, Thomas W. 2021. "Document clustering" https://cran.r-project.org/web/packages/textmineR/vignettes/b_document_clustering.html
+
+Silge, Julia and David Robinson. 2022. "Converting to and from non-tidy formats," in Text Mining with R. https://www.tidytextmining.com/dtm.html
+
+"pairwise_similarity: Cosine similarity of pairs of items" https://rdrr.io/cran/widyr/man/pairwise_similarity.html
+
+"Multidimensional Scaling" https://www.statmethods.net/advstats/mds.html
