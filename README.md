@@ -16,6 +16,7 @@ This set is incomplete. I am planning to add more to this set over time.
 4. [Plotting Regression Coefficients](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/plot_coefs.html)
 5. [Margins and Predictions for OLS](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/margins_ols.html)
 6. [Nested Regression Tables](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/nested.html)
-7. [Exponential Random Graph Models](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/ergm.html)
-8. [Comparing Text Documents](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/comparing_docs.html)
+7. [Network Simulations](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/netsim.html)
+8. [Exponential Random Graph Models](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/ergm.html)
+9. [Comparing Text Documents](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/comparing_docs.html)
 
