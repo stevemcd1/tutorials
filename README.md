@@ -19,4 +19,5 @@ This set is incomplete. I am planning to add more to this set over time.
 7. [Network Simulations](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/netsim.html)
 8. [Exponential Random Graph Models](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/ergm.html)
 9. [Comparing Text Documents](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/comparing_docs.html)
+10. [Scraping GitHub Data](https://htmlpreview.github.io/?https://github.com/stevemcd1/tutorials/blob/main/scraping_example.html)
 
